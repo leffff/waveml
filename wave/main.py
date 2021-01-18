@@ -1,39 +1,43 @@
 import torch
 import numpy as np
-from sklearn.metrics import mean_squared_log_error
-
-def RMSE(y_true, y_pred):
-    error = torch.sqrt(torch.mean((y_true - y_pred) ** 2))
-    return error
+import pandas as pd
+import matplotlib.pyplot as plt
+from metrics import RMSE, MSE, MAE
 
 
 class WaveRegressor():
-    def __init__(self, n_opt_rounds=1000, learning_rate=0.001, loss_function=RMSE, verbose=1):
-        self.n_opt_rounds = n_opt_rounds
-        self.learning_rate = learning_rate
+    def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=RMSE, verbose=1):
+        self.n_opt_rounds = int(n_opt_rounds)
+        self.learning_rate = float(learning_rate)
         self.loss_function = loss_function
-        self.verbose = verbose
+        self.verbose = int(verbose)
+        self.fitted = False
 
+        if self.n_opt_rounds < 1:
+            raise ValueError(f"n_opt_rounds should belong to an [1;inf) interval, passed {self.n_opt_rounds}")
+        if self.learning_rate <= 0:
+            raise ValueError(f"learning rate should belong to a (0;inf) interval, passed {self.learning_rate}")
+        if self.verbose < 0:
+            raise ValueError(f"learning rate should belong to a [0;inf) interval, passed {self.verbose}")
 
-    # Fuction for weight optimization
-    def opt_func(self, X_segment, y_segment, w):
-        y_true = y_segment
-        y_pred = self.predict(X_segment)
+    # Training process
+    def fit(self, X, y, weights=None, eval_set=None, use_best_model=False):
+        X_train_tensor, y_train_tensor, self.use_best_model = self.__to_tensor(X), self.__to_tensor(y), use_best_model
+        self.train_losses, self.test_losses, self.weights_history = [], [], []
 
-        return self.loss_function(y_true, y_pred)
+        if type(self.use_best_model) != bool:
+            raise ValueError(f"use_best_model parameter should be bool, passed {self.use_best_model}")
 
-    #Training process
-    def fit(self, X, y, weights=None, eval_set=None, use_best_model=False, cv=False):
-        self.use_best_model = use_best_model
         is_eval_set = True if eval_set != None else False
+        if is_eval_set:
+            X_test_tensor = self.__to_tensor(eval_set[0])
+            y_test_tensor = self.__to_tensor(eval_set[1])
 
-        self.train_losses = np.array([])
-        self.test_losses = np.array([])
+        n_features = X_train_tensor.shape[1]
+        self.weights = self.__to_tensor(weights) if weights != None else torch.tensor(
+            [1 / n_features for i in range(n_features)]
+        )
 
-        self.weights_history = []
-
-        n_features = X.shape[1]
-        self.weights = torch.tensor(weights) if weights != None else torch.tensor([1 / n_features for i in range(n_features)])
         self.weights.requires_grad_()
         self.optimizer = torch.optim.Adam([self.weights], self.learning_rate)
 
@@ -41,22 +45,22 @@ class WaveRegressor():
             # clear gradient
             self.optimizer.zero_grad()
             # get train set error
-            train_loss = self.opt_func(X_segment=X, y_segment=y,
+            train_loss = self.__opt_func(X_segment=X_train_tensor, y_segment=y_train_tensor,
                                        w=self.weights)
-            #append train loss to train loss history
-            np.append(self.train_losses, train_loss.item())
-            #create a train part of fit information
+            # append train loss to train loss history
+            self.train_losses.append(train_loss.item())
+            # create a train part of fit information
             train_output = f"train: {train_loss.item()}"
             # optimize weights according to the function
             train_loss.backward()
 
-            #create a test part of fit information
+            # create a test part of fit information
             test_output = ""
             if is_eval_set:
                 # get test set error
-                test_loss = self.opt_func(X_segment=eval_set[0], y_segment=eval_set[1], w=self.weights)
+                test_loss = self.__opt_func(X_segment=X_test_tensor, y_segment=y_test_tensor, w=self.weights)
                 # append test loss to test loss history
-                np.append(self.test_losses, test_loss)
+                self.test_losses.append(test_loss.item())
                 test_output = f"test: {test_loss.item()}"
 
             print(f"round: {i}", train_output, test_output)
@@ -64,33 +68,71 @@ class WaveRegressor():
 
             self.optimizer.step()
 
+        self.fitted = True
+        print(self.fitted)
+
     # Get a tensor of weights after training
-    def get_weights(self):
+    def get_weights(self) -> torch.tensor:
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
         if self.use_best_model:
-            return self.weights_history[self.test_losses.argmax()[0]]
-        return self.weights_history[self.train_losses.argmax()[0]]
+            return self.weights_history[self.test_losses.index(min(self.test_losses))]
+        return self.weights_history[self.train_losses.index(min(self.train_losses))]
 
-    #Predict on on passed data with current weights
-    def predict(self, X):
-        return torch.sum(torch.tensor(X.to_numpy()) * self.weights, 1)
+    # Predict on on passed data with current weights
+    def predict(self, X) -> torch.tensor:
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
-    def score(self):
-        return
+        X = self.__to_tensor(X)
+        sum = torch.sum(X * self.get_weights(), 1)
+        return sum
+
+    def score(self, X_train, y_test):
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
+        X_train_tensor, y_test_tensor = self.__to_tensor(X_train), self.__to_tensor(y_test)
+        y_pred = self.predict(X_train_tensor)
+        return self.loss_function(y_test_tensor, y_pred)
 
     def plot(self):
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
+        plt.plot([i for i in range(self.n_opt_rounds)], self.train_losses)
+        plt.plot([i for i in range(self.n_opt_rounds)], self.test_losses)
+        plt.show()
         return
 
-# import pandas as pd
-# S_train = pd.DataFrame()
-# S_test = pd.DataFrame()
-#
-# features = [f"features {i + 1}" for i in range(7)]
-#
-# for i in range(len(features)):
-#     S_train[features[i]] = [i + 1 for k in range(1000)]
-#     S_test[features[i]] = [i + 0.5 for j in range(1000)]
-#
-# y = torch.tensor([4 for i in range(1000)])
-#
-# wr = WaveRegressor()
-# wr.fit(S_train, y, weights=[0.0 for i in range(7)])
+    # Function for weight optimization
+    def __opt_func(self, X_segment, y_segment, w):
+        y_true = y_segment
+        y_pred = self.__inner_predict(X_segment)
+
+        return self.loss_function(y_true, y_pred)
+
+    def __to_tensor(self, X) -> torch.tensor:
+        dtype = type(X)
+        allowed_dtypes = [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]
+        if dtype not in allowed_dtypes:
+            raise ValueError(f"Passed data should be {allowed_dtypes} but not {dtype}")
+
+        if dtype == pd.DataFrame:
+            return torch.tensor(X.to_numpy())
+
+        elif dtype == pd.Series:
+            return torch.tensor(X.values)
+
+        elif dtype == np.array:
+            return torch.tensor(X)
+
+        elif dtype == list:
+            return torch.tensor(X)
+
+        return X
+
+    def __inner_predict(self, X) -> torch.tensor:
+        sum = torch.sum(X * self.weights, 1)
+        return sum
