@@ -1,4 +1,4 @@
-from wave.main import WaveRegressor
+from waveml.main import WaveRegressor
 
 __author__ = 'Lev Novitskiy > levnovitskiy@gmail.com > https://github.com/leffff/ > https://www.kaggle.com/levnovitskiy'
 __license__ = 'Apache'

@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from wave.metrics import RMSE, MSE, MAE
+from waveml.metrics import RMSE, MSE, MAE
 
 
 class WaveRegressor():
