@@ -2,11 +2,11 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from metrics import RMSE, MSE, MAE
+from wave.metrics import RMSE, MSE, MAE
 
 
 class WaveRegressor():
-    def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=RMSE, verbose=1):
+    def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=MSE, verbose=1):
         self.n_opt_rounds = int(n_opt_rounds)
         self.learning_rate = float(learning_rate)
         self.loss_function = loss_function
@@ -21,7 +21,7 @@ class WaveRegressor():
             raise ValueError(f"learning rate should belong to a [0;inf) interval, passed {self.verbose}")
 
     # Training process
-    def fit(self, X, y, weights=None, eval_set=None, use_best_model=False):
+    def fit(self, X, y, weights=None, eval_set=None, use_best_model=False) -> None:
         X_train_tensor, y_train_tensor, self.use_best_model = self.__to_tensor(X), self.__to_tensor(y), use_best_model
         self.train_losses, self.test_losses, self.weights_history = [], [], []
 
@@ -45,8 +45,7 @@ class WaveRegressor():
             # clear gradient
             self.optimizer.zero_grad()
             # get train set error
-            train_loss = self.__opt_func(X_segment=X_train_tensor, y_segment=y_train_tensor,
-                                       w=self.weights)
+            train_loss = self.__opt_func(X_segment=X_train_tensor, y_segment=y_train_tensor)
             # append train loss to train loss history
             self.train_losses.append(train_loss.item())
             # create a train part of fit information
@@ -58,36 +57,36 @@ class WaveRegressor():
             test_output = ""
             if is_eval_set:
                 # get test set error
-                test_loss = self.__opt_func(X_segment=X_test_tensor, y_segment=y_test_tensor, w=self.weights)
+                test_loss = self.__opt_func(X_segment=X_test_tensor, y_segment=y_test_tensor)
                 # append test loss to test loss history
                 self.test_losses.append(test_loss.item())
                 test_output = f"test: {test_loss.item()}"
 
-            print(f"round: {i}", train_output, test_output)
+            if self.verbose != 0:
+                print(f"round: {i}", train_output, test_output)
             self.weights_history.append(self.weights)
 
             self.optimizer.step()
 
         self.fitted = True
-        print(self.fitted)
 
     # Get a tensor of weights after training
-    def get_weights(self) -> torch.tensor:
+    def get_weights(self) -> np.ndarray:
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
         if self.use_best_model:
-            return self.weights_history[self.test_losses.index(min(self.test_losses))]
-        return self.weights_history[self.train_losses.index(min(self.train_losses))]
+            return self.weights_history[self.test_losses.index(min(self.test_losses))].detach().numpy()
+        return self.weights_history[self.train_losses.index(min(self.train_losses))].detach().numpy()
 
     # Predict on on passed data with current weights
-    def predict(self, X) -> torch.tensor:
+    def predict(self, X) -> np.ndarray:
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
         X = self.__to_tensor(X)
         sum = torch.sum(X * self.get_weights(), 1)
-        return sum
+        return sum.detach().numpy()
 
     def score(self, X_train, y_test):
         if not self.fitted:
@@ -97,7 +96,7 @@ class WaveRegressor():
         y_pred = self.predict(X_train_tensor)
         return self.loss_function(y_test_tensor, y_pred)
 
-    def plot(self):
+    def plot(self) -> None:
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
@@ -107,17 +106,13 @@ class WaveRegressor():
         return
 
     # Function for weight optimization
-    def __opt_func(self, X_segment, y_segment, w):
+    def __opt_func(self, X_segment, y_segment):
         y_true = y_segment
         y_pred = self.__inner_predict(X_segment)
-
         return self.loss_function(y_true, y_pred)
 
-    def __to_tensor(self, X) -> torch.tensor:
+    def __to_tensor(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> torch.tensor:
         dtype = type(X)
-        allowed_dtypes = [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]
-        if dtype not in allowed_dtypes:
-            raise ValueError(f"Passed data should be {allowed_dtypes} but not {dtype}")
 
         if dtype == pd.DataFrame:
             return torch.tensor(X.to_numpy())
@@ -125,7 +120,7 @@ class WaveRegressor():
         elif dtype == pd.Series:
             return torch.tensor(X.values)
 
-        elif dtype == np.array:
+        elif dtype == np.ndarray:
             return torch.tensor(X)
 
         elif dtype == list:
