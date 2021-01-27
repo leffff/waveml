@@ -1,4 +1,4 @@
-# wave
+# waveml
 Open source machine learning library for performance of a weighted average over stacked predictions
 
 ## Installation
@@ -88,6 +88,20 @@ Output:
 ```
 WaveRegressor: 2.915135932023191
 ```
+
+## Why is it better than Linear Regression?
+The three main differance between WaveRegressor and linear regression:
+    1) WaveRegressor does not fit an intercept. Only coefficients </br>
+    2) It can optimize several metrics that are present in ```metrics.py``` </br>
+    3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
+
+## What is WavePredictionTuner?
+WavePredictionTuner is a model that performs linear transformations on each feature in a way that minimizes an error betbeen a feature and a target value.
+
+## Why to combine the two?
+Combining the two models increases prediction quality
+
+## Combining example
 Tune stacked predictions
 ```python
 wpt = WavePredictionTuner(verbose=0, n_opt_rounds=1000, learning_rate=0.0001, loss_function=SAE)
