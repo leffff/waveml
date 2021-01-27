@@ -17,7 +17,7 @@ from waveml import WaveRegressor, WavePredictionTuner
 from waveml.metrics import SAE
 ```
 Loss function
-```
+```python
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())    
 ```
