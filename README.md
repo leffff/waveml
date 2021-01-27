@@ -23,10 +23,11 @@ from vecstack import StackingTransformer
 from sklearn.metrics import mean_squared_error
 from waveml import WaveRegressor, WavePredictionTuner
 from waveml.metrics import SAE
-
+```
+Loss function
+```
 def rmse(predictions, targets):
-    return np.sqrt(((predictions - targets) ** 2).mean())
-        
+    return np.sqrt(((predictions - targets) ** 2).mean())    
 ```
 Stacking ensemble
 ```python
@@ -39,7 +40,7 @@ stack = StackingTransformer(
     n_folds=5,
     shuffle=True,
     random_state=42,
-    metric=mean_squared_error,
+    metric=rmse,
     variant="A",
     verbose=0
 )
@@ -57,7 +58,7 @@ print("Individual scores:", np.mean(stack.scores_, axis=1))
 ```
 Output:
 ```
-Individual scores: [13.214764   14.77008154 11.36905454]
+Individual scores: [3.54600289 3.7031519  3.31942812]
 ```
 
 Stacked predictions
@@ -75,7 +76,7 @@ print("LinearRegression:", rmse(y_test, lr.predict(SX_test)))
 ```
 Output
 ```
-LinearRegression: 2.949918844488277
+LinearRegression: 3.064970532826568
 ```
 
 Perform a weighted average
@@ -86,7 +87,7 @@ print("WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
 ```
 Output:
 ```
-WaveRegressor: 2.915135932023191
+WaveRegressor: 3.026784272554217
 ```
 
 ## Why is it better than Linear Regression?
@@ -116,5 +117,5 @@ print("WavePredictionTuner + WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
 ```
 Output:
 ```
-WavePredictionTuner + WaveRegressor: 2.9100390094340303
+WavePredictionTuner + WaveRegressor: 3.0190282172825995
 ```
