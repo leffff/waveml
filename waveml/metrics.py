@@ -6,6 +6,11 @@ def RMSE(y_true, y_pred):
     return error
 
 
+def MSLE(y_true, y_pred):
+    error = torch.mean((torch.log(y_true + 1) - torch.log(y_pred + 1)) ** 2)
+    return error
+
+
 def MSE(y_true, y_pred):
     error = torch.mean((y_true - y_pred) ** 2)
     return error
