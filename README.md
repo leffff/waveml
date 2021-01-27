@@ -22,6 +22,11 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, E
 from vecstack import StackingTransformer
 from sklearn.metrics import mean_squared_error
 from waveml import WaveRegressor, WavePredictionTuner
+from waveml.metrics import SAE
+
+def rmse(predictions, targets):
+    return np.sqrt(((predictions - targets) ** 2).mean())
+        
 ```
 Stacking ensemble
 ```python
@@ -60,19 +65,32 @@ Stacked predictions
 SX_train = stack.transform(X_train)
 SX_test = stack.transform(X_test)
 ```
+
+LinearRegression
+```python
+from sklearn.linear_model import LinearRegression
+lr = LinearRegression()
+lr.fit(SX_train, y_train)
+print("LinearRegression:", rmse(y_test, lr.predict(SX_test)))
+```
+Output
+```
+LinearRegression: 2.949918844488277
+```
+
 Perform a weighted average
 ```python
-wr = WaveRegressor(verbose=0)
+wr = WaveRegressor(verbose=0, n_opt_rounds=1000, loss_function=SAE)
 wr.fit(SX_train, y_train)
-print("WaveRegressor:", mean_squared_error(y_test, wr.predict(SX_test)))
+print("WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
 ```
 Output:
 ```
-WaveRegressor: 9.730383467673033
+WaveRegressor: 2.915135932023191
 ```
 Tune stacked predictions
 ```python
-wpt = WavePredictionTuner(verbose=0)
+wpt = WavePredictionTuner(verbose=0, n_opt_rounds=1000, learning_rate=0.0001, loss_function=SAE)
 wpt.fit(SX_train, y_train)
 TSX_train = wpt.transform(SX_train)
 TSX_test = wpt.transform(SX_test)
@@ -80,9 +98,9 @@ TSX_test = wpt.transform(SX_test)
 Perform weighted average over tuned stacked predictions
 ```python
 wr.fit(TSX_train, y_train)
-print("WavePredictionTuner + WaveRegressor:", mean_squared_error(y_test, wr.predict(SX_test)))
+print("WavePredictionTuner + WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
 ```
 Output:
 ```
-WavePredictionTuner + WaveRegressor: 9.68138105847055
+WavePredictionTuner + WaveRegressor: 2.9100390094340303
 ```
