@@ -3,7 +3,7 @@ Open source machine learning library for performance of a weighted average over 
 
 ## Installation
 ```
-git clone https://github.com/leffff/wave.git
+git clone https://github.com/leffff/waveml.git
 ```
 ### Pip
 ```
