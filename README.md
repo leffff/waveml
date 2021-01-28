@@ -86,9 +86,9 @@ WaveRegressor: 3.026784272554217
 
 ## Why is it better than Linear Regression?
 The three main differance between WaveRegressor and linear regression: </br>
->>1) WaveRegressor does not fit an intercept. Only coefficients </br>
->>2) It can optimize several metrics that are present in ```metrics.py``` </br>
->>3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
+>1) WaveRegressor does not fit an intercept. Only coefficients </br>
+>2) It can optimize several metrics that are present in ```metrics.py``` </br>
+>3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
 
 ## What is WaveTransformer?
 WaveTransformer is a model that performs linear transformations on each feature in a way that minimizes an error betbeen a feature and a target value </br>
