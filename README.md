@@ -1,5 +1,5 @@
 # waveml
-Open source machine learning library for performance of a weighted average over stacked predictions
+Open source machine learning library for performance of a weighted average  and linear transformations over stacked predictions
 
 ### Pip
 ```
@@ -13,7 +13,7 @@ from sklearn.datasets import load_boston
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
 from vecstack import StackingTransformer
 from sklearn.metrics import mean_squared_error
-from waveml import WaveRegressor, WavePredictionTuner
+from waveml import WaveRegressor, WaveTransformer
 from waveml.metrics import SAE
 ```
 Loss function
@@ -71,7 +71,9 @@ Output
 LinearRegression: 3.064970532826568
 ```
 
-Perform a weighted average
+## What is WaveRegressor?
+WaveRegressor is a model that performs a weighted average over stacked predictions
+
 ```python
 wr = WaveRegressor(verbose=0, n_opt_rounds=1000, loss_function=SAE)
 wr.fit(SX_train, y_train)
@@ -83,13 +85,14 @@ WaveRegressor: 3.026784272554217
 ```
 
 ## Why is it better than Linear Regression?
-The three main differance between WaveRegressor and linear regression:
-    1) WaveRegressor does not fit an intercept. Only coefficients </br>
-    2) It can optimize several metrics that are present in ```metrics.py``` </br>
-    3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
+The three main differance between WaveRegressor and linear regression: </br>
+>>1) WaveRegressor does not fit an intercept. Only coefficients </br>
+>>2) It can optimize several metrics that are present in ```metrics.py``` </br>
+>>3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
 
-## What is WavePredictionTuner?
-WavePredictionTuner is a model that performs linear transformations on each feature in a way that minimizes an error betbeen a feature and a target value.
+## What is WaveTransformer?
+WaveTransformer is a model that performs linear transformations on each feature in a way that minimizes an error betbeen a feature and a target value </br>
+WaveTransformer does a cross validation process therefore it does not overfit and can be used to transform training data
 
 ## Why to combine the two?
 Combining the two models increases prediction quality
@@ -97,17 +100,17 @@ Combining the two models increases prediction quality
 ## Combining example
 Tune stacked predictions
 ```python
-wpt = WavePredictionTuner(verbose=0, n_opt_rounds=1000, learning_rate=0.0001, loss_function=SAE)
-wpt.fit(SX_train, y_train)
-TSX_train = wpt.transform(SX_train)
-TSX_test = wpt.transform(SX_test)
+wt = WaveTransformer(verbose=0, n_opt_rounds=1000, learning_rate=0.0001, loss_function=SAE)
+wt.fit(SX_train, y_train, n_folds=5)
+TSX_train = wt.transform(SX_train)
+TSX_test = wt.transform(SX_test)
 ```
-Perform weighted average over tuned stacked predictions
+Perform weighted average over transformed stacked predictions
 ```python
 wr.fit(TSX_train, y_train)
-print("WavePredictionTuner + WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
+print("WaveTransformer + WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
 ```
 Output:
 ```
-WavePredictionTuner + WaveRegressor: 3.0190282172825995
+WaveTransformer + WaveRegressor: 3.0190282172825995
 ```
