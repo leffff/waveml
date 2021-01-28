@@ -2,7 +2,10 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from waveml.metrics import RMSE, MSE, MAE
+from waveml.metrics import RMSE, MSE, MAE, MAPE, MSLE, MBE, SAE, SSE
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.model_selection import KFold
+
 
 def to_tensor(X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> torch.tensor:
     dtype = type(X)
@@ -38,9 +41,10 @@ class Wave:
             raise ValueError(f"learning rate should belong to a [0;inf) interval, passed {self.verbose}")
 
 
-class WaveRegressor(Wave):
+class WaveRegressor(Wave, BaseEstimator, TransformerMixin):
     def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=MSE, verbose=1):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
+
     # Training process
     def fit(self, X, y, weights=None, eval_set=None, use_best_model=False) -> None:
         X_train_tensor, y_train_tensor, self.use_best_model = to_tensor(X), to_tensor(y), use_best_model
@@ -138,56 +142,80 @@ class WaveRegressor(Wave):
         return sum
 
 
-class WavePredictionTuner(Wave):
-    def __init__(self, n_opt_rounds=1000, learning_rate=0.1, loss_function=MSE, verbose=1):
+class WaveTransformer(Wave, BaseEstimator, TransformerMixin):
+    def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=MSE, verbose=1):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
     def __opt_func(self, X_segment, y_segment, weights):
         return self.loss_function(X_segment * weights[0] + weights[1], y_segment)
 
-    def fit(self, X, y, use_best_model=False) -> None:
-        X_train_tensor, y_train_tensor, self.use_best_model = to_tensor(X), to_tensor(y), use_best_model
-        self.train_losses = []
-        self.n_features =  X_train_tensor.shape[1]
-        self.weights = torch.tensor([])
+    def fit(self, X, y, n_folds=4, random_state=None, shuffle=False):
+        X_train_tensor, y_train_tensor = to_tensor(X), to_tensor(y)
+
+        self.n_folds = int(n_folds)
+        if self.n_folds < 2:
+            raise ValueError(f"n_folds should belong to a [2;inf) interval, passed {self.verbose}")
+        if self.n_folds < 0:
+            raise ValueError(f"random_state should belong to a [0;inf) interval, passed {self.verbose}")
+        self.shuffle = bool(shuffle)
+        self.random_state = int(random_state) if self.shuffle else None
+
+        self.n_features = X_train_tensor.shape[1]
+        self.weights = []
 
         self.fitted = False
 
         for i in range(self.n_features):
-            weights = torch.tensor([1.0, 0.0])
-            weights.requires_grad_()
-            feature = X_train_tensor[:, i]
-            self.optimizer = torch.optim.Adam([weights], self.learning_rate)
+            feature_weights = torch.tensor([])
 
-            for j in range(self.n_opt_rounds):
-                self.optimizer.zero_grad()
-                # get train set error
-                train_loss = self.__opt_func(X_segment=feature, y_segment=y_train_tensor, weights=weights)
-                # append train loss to train loss history
-                self.train_losses.append(train_loss.item())
-                # create a train part of fit information
-                train_output = f"train: {train_loss.item()}"
-                # optimize weights according to the function
-                if self.verbose != 0:
-                    print("round:", j, train_output)
-                train_loss.backward()
-                self.optimizer.step()
+            X = X_train_tensor[:, i]
+            kf = KFold(n_splits=self.n_folds, random_state=self.random_state, shuffle=self.shuffle)
 
-            self.weights = torch.cat([self.weights, weights])
+            print("\nFeature:", i)
+            f = 0
+            for train_index, test_index in kf.split(X):
+                fold_weights = torch.tensor([1.0, 0.0])
+                fold_weights.requires_grad_()
+                self.optimizer = torch.optim.Adam([fold_weights], self.learning_rate)
 
-        self.weights = self.weights.reshape(-1, 2)
+                X_train, X_test = X[train_index], X[test_index]
+                y_train, y_test = y_train_tensor[train_index], y_train_tensor[test_index]
+
+                for j in range(self.n_opt_rounds):
+                    self.optimizer.zero_grad()
+                    # get train set error
+                    train_loss = self.__opt_func(X_segment=X_train, y_segment=y_train, weights=fold_weights)
+                    # create a train part of fit information
+                    train_output = f"train: {train_loss.item()}"
+                    # optimize weights according to the function
+                    if self.verbose >= 1:
+                        print("round:", j, train_output)
+                    train_loss.backward()
+                    self.optimizer.step()
+
+                if self.verbose in [1, 2]:
+                    print(f"\tFold {f}:", self.__opt_func(X_segment=X_test, y_segment=y_test, weights=fold_weights).item())
+                f += 1
+                feature_weights = torch.cat([feature_weights, fold_weights])
+            feature_weights = feature_weights.reshape(-1, 2)
+            self.weights.append(feature_weights)
         self.fitted = True
+        return
 
     def get_weights(self) -> np.ndarray:
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
-        return self.weights.detach().numpy()
+        return torch.tensor(self.weights).detach().numpy()
 
     def transform(self, X) -> np.ndarray:
         X_tensor = to_tensor(X)
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
-        return (X_tensor * self.weights[:, 0] + self.weights[:, 1]).detach().numpy()
+        for i in range(self.n_features):
+            feature = X_tensor[:, i]
+            w = self.weights[i].mean(dim=0)
+            X_tensor[:, i] = feature * w[0] + w[1]
 
+        return X_tensor.detach().numpy()

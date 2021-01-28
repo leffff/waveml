@@ -25,6 +25,7 @@ def MAE(y_true, y_pred):
     error = torch.mean(torch.abs(y_true - y_pred))
     return error
 
+
 def SAE(y_true, y_pred):
     error = torch.sum(torch.abs(y_true - y_pred))
     return error
