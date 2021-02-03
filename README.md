@@ -114,3 +114,5 @@ Output:
 ```
 WaveTransformer + WaveRegressor: 3.0190282172825995
 ```
+
+## TODO: categorical transformer
