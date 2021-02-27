@@ -35,6 +35,15 @@ def MAPE(y_true, y_pred):
     error = torch.mean(torch.abs((y_true - y_pred) / y_true))
     return error
 
+
 def MBE(y_true, y_pred):
     error = torch.sum((y_true - y_pred) / y_true)
     return error
+
+def Accuracy(y_true, y_pred):
+    total = y_true.__len__()
+    guessed = y_pred[y_pred == y_true].__len__()
+    res = torch.tensor([guessed / total], requires_grad=True)
+    res.retain_grad()
+    return res
+

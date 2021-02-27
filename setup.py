@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="waveml",
-    version="0.1.8",
+    version="0.1.10",
     author="leffff",
     author_email="levnovitskiy@gmail.com",
     description="Open source machine learning library for performance of a weighted average over stacked predictions",
