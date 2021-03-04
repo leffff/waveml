@@ -1,3 +1,6 @@
+[![PyPI version](https://img.shields.io/pypi/v/waveml.svg?colorB=4cc61e)](https://pypi.org/project/waveml/)
+[![PyPI license](https://img.shields.io/pypi/l/waveml.svg)](https://github.com/leffff/waveml/blob/main/LICENSE)
+
 # waveml
 Open source machine learning library for performance of a weighted average  and linear transformations over stacked predictions
 
