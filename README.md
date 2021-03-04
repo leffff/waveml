@@ -64,7 +64,7 @@ lr.fit(SX_train, y_train)
 lr.predict(SX_test)
 ```
 
-### Sklear compatebility
+### Sklearn compatebility
 
 ```python
 from sklearn.pipeline import Pipeline
