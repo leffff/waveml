@@ -2,8 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from waveml.metrics import RMSE, MSE, MAE, MAPE, MSLE, MBE, SAE, SSE, Accuracy
-from sklearn.base import BaseEstimator, TransformerMixin
+from waveml.metrics import RMSE, MSE, MAE, MAPE, MSLE, MBE, SAE, SSE
 from sklearn.model_selection import KFold
 
 
@@ -64,10 +63,9 @@ class WaveRegressor(Wave):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
     # Training process
-    def fit(self,
-            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            weights=None, eval_set=None, use_best_model=False) -> None:
+    def fit(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list], weights=None, eval_set=None,
+            use_best_model=False) -> None:
 
         X_train_tensor, y_train_tensor, self.use_best_model = to_tensor(X), to_tensor(y), use_best_model
         self.train_losses, self.test_losses, self.weights_history = [], [], []
@@ -166,25 +164,24 @@ class WaveRegressor(Wave):
 
 
 class WaveTransformer(Wave):
-    def __init__(self, n_opt_rounds=1000, learning_rate=0.01, loss_function=MSE, verbose=1):
+    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
     def __opt_func(self, X_segment, y_segment, weights):
         return self.loss_function(X_segment * weights[0] + weights[1], y_segment)
 
-    def fit(self,
-            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            n_folds=4, random_state=None, shuffle=False) -> None:
+    def fit(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list], n_folds: int = 4, random_state: int = None,
+            shuffle: bool = False) -> None:
 
         X_train_tensor, y_train_tensor = to_tensor(X), to_tensor(y)
 
-        self.n_folds = int(n_folds)
-        if self.n_folds < 2:
+        if n_folds < 2:
             raise ValueError(f"n_folds should belong to a [2;inf) interval, passed {self.verbose}")
-        if self.n_folds < 0:
+        if n_folds < 0:
             raise ValueError(f"random_state should belong to a [0;inf) interval, passed {self.verbose}")
-        self.shuffle = bool(shuffle)
+        self.n_folds = n_folds
+
         self.random_state = int(random_state) if self.shuffle else None
 
         self.n_features = X_train_tensor.shape[1]
@@ -250,7 +247,7 @@ class WaveTransformer(Wave):
 
 
 class WaveEncoder():
-    def __init__(self, encodeing_type: str, strategy="mean"):
+    def __init__(self, encodeing_type: str, strategy: str = "mean"):
         self.encoding_types = ["catboost", "label", "target", "count"]
         self.encoding_type = encodeing_type.lower()
         if self.encoding_type not in self.encoding_types:
@@ -269,9 +266,9 @@ class WaveEncoder():
 
         self.fitted = False
 
-    def fit(self,
-            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            y=None, regression=True, cat_features=None) -> None:
+    def fit(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list] = None, regression=True,
+            cat_features=None) -> None:
 
         self.fitted = False
         self.regression = regression
@@ -361,40 +358,188 @@ class WaveEncoder():
     # ADD: __catboost
 
 
-class WaveCrossValidator:
-    def __init__(self, model, loss_function):
-        self.model = model
-        self.loss_function = loss_function
-        self.models = []
-        self.fitted = False
+class WaveStackingTransformer:
+    def __init__(self, models, loss_function, n_folds: int = 4, random_state: int = None, shuffle: bool = False,
+                 verbose: bool = True, regression: bool = True, voting: str = "soft"):
 
-    def fit(self, X, y, n_folds=4, random_state=1, shuffle=False):
-        self.X, self.y = to_array(X), to_array(y)
+        self.models = [i[1] for i in models]
+        self.n_models = len(self.models)
+        self.names = [i[0] for i in models]
+        self.model_dict = {}
+        self.model_scores_dict = {}
+
         self.n_folds = n_folds
+        self.loss_function = loss_function
         self.random_state = random_state
         self.shuffle = shuffle
+        self.verbose = verbose
+        self.regression = regression
+        self.soft_voting = False
+        self.hard_voting = False
+
+        if not self.regression:
+            if voting.lower() == "soft":
+                self.soft_voting = True
+            elif voting.lower() == "hard":
+                self.hard_voting = True
+            else:
+                raise ValueError(f'Unknown voting type: {voting}, expected "soft" or "gard"')
+
+        self.fitted = False
+
+    def fit(self,
+            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> None:
+
+        self.model_dict = {}
+        self.model_scores_dict = {}
+
+        self.X, self.y = to_array(X), to_array(y)
+
+        if self.soft_voting:
+            self.n_labels = len(np.unique(y))
 
         kf = KFold(n_splits=self.n_folds, random_state=self.random_state, shuffle=self.shuffle)
 
-        fold = 0
-        for train_index, test_index in kf.split(X):
-            X_train, X_test = X[train_index], X[test_index]
-            y_train, y_test = y[train_index], y[test_index]
-            model = self.model
-            model.fit(X_train, y_train)
-            self.models.append(model)
-            print(f"Fold: {fold}, Score: {self.loss_function(model.predict(X_test), y_test)}")
-            fold += 1
+        # Form each model
+        for i in range(self.n_models):
+            # For each fold
+            sub_models = []
+            sub_scores = []
+            fold = 0
+            for train_index, test_index in kf.split(X):
+                sub_model = self.models[i]
+
+                X_train, X_test = X[train_index], X[test_index]
+                y_train, y_test = y[train_index], y[test_index]
+
+                sub_model.fit(X_train, y_train)
+                sub_models.append(sub_model)
+
+                if self.regression or self.hard_voting:
+                    sub_score = self.loss_function(sub_model.predict(X_test), y_test)
+                else:
+                    sub_score = self.loss_function(sub_model.predict_proba(X_test), y_test)
+
+                sub_scores.append(sub_score)
+
+                if self.verbose:
+                    print(f"Fold: {fold}, Score: {sub_score}")
+
+                fold += 1
+
+            self.model_dict[self.names[i]] = sub_models
+            self.model_scores_dict[self.names[i]] = sub_scores
 
         self.fitted = True
 
-    def predict(self, X):
+    def transform(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+                  prettified: bool = False) -> [np.ndarray, pd.DataFrame]:
+
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
         X = to_array(X)
-        self.predictions = []
-        for model in self.models:
-            self.predictions.append(model.predict(X))
+        transformations = np.zeros([len(X), 1])
 
-        return sum(self.predictions) / self.n_folds
+        for key in list(self.model_dict.keys()):
+            sub_transformations = np.zeros([len(X), 1])
+
+            sub_models = self.model_dict.get(key)
+
+            for sub_model in sub_models:
+                if self.regression or self.hard_voting:
+                    sub_transformations = np.hstack((sub_transformations, sub_model.predict(X).reshape(-1, 1)))
+                else:
+                    sub_transformations = np.hstack(
+                        (sub_transformations, sub_model.predict_proba(X)[:, 1].reshape(-1, 1)))
+
+            sub_transformations = sub_transformations[:, 1:]
+
+            if self.regression or self.soft_voting:
+                transformations = np.hstack((transformations, sub_transformations.mean(axis=1).reshape(-1, 1)))
+            else:
+                def voting(x):
+                    x = list(x)
+                    if x.count(0) > x.count(1):
+                        return 0
+                    else:
+                        return 1
+
+                transformations = np.hstack(
+                    [transformations, np.array(list(map(voting, sub_transformations))).reshape(-1, 1)])
+
+        transformations = transformations[:, 1:]
+        if prettified:
+            return pd.DataFrame(columns=self.names, data=transformations)
+        return transformations
+
+    def fit_transform(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+                      y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list], prettified: bool = False) -> [
+        np.ndarray,
+        pd.DataFrame]:
+
+        self.model_dict = {}
+        self.model_scores_dict = {}
+
+        self.X, self.y = to_array(X), to_array(y)
+
+        kf = KFold(n_splits=self.n_folds, random_state=self.random_state, shuffle=self.shuffle)
+
+        # Form each model
+        transformations = np.zeros([len(X), self.n_models])
+
+        for i in range(self.n_models):
+            # For each fold
+            sub_models = []
+            sub_scores = []
+            fold = 0
+            sub_transformations = np.zeros([len(X), 1])
+
+            for train_index, test_index in kf.split(X):
+                X_train, X_test = X[train_index], X[test_index]
+                y_train, y_test = y[train_index], y[test_index]
+
+                sub_model = self.models[i]
+                sub_model.fit(X_train, y_train)
+
+                if self.regression or self.hard_voting:
+                    sub_transformations[test_index] = sub_model.predict(X_test).reshape(-1, 1)
+                else:
+                    sub_transformations[test_index] = sub_model.predict_proba(X_test)[:, 1].reshape(-1, 1)
+
+                sub_models.append(sub_model)
+                sub_score = self.loss_function(sub_model.predict(X_test), y_test)
+                sub_scores.append(sub_score)
+
+                if self.verbose:
+                    print(f"Fold: {fold}, Score: {sub_score}")
+
+                fold += 1
+
+            transformations[:, i] = sub_transformations[:, 0]
+
+            self.model_dict[self.names[i]] = sub_models
+            self.model_scores_dict[self.names[i]] = sub_scores
+
+        self.fitted = True
+
+        if prettified:
+            return pd.DataFrame(columns=self.names, data=transformations)
+
+        return transformations
+
+    def get_scores(self, prettified: bool = False) -> [np.ndarray, pd.DataFrame]:
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
+        if prettified:
+            return pd.DataFrame(data=self.model_scores_dict)
+
+        return np.array(list(self.model_scores_dict.values()))
+
+    def get_models(self) -> [np.ndarray, pd.DataFrame]:
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
+        return self.model_dict.values()
