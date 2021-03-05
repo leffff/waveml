@@ -82,9 +82,67 @@ pipeline.predict(X_test)
 
 ## WaveRegressor
 Performs weighted average over stacked predictions
+Analogue of Linear Regression without intercept
+Linear Regression: y = b0 + b1x1 + b2x2 + ... + bnxn
+Weihghted Average: y = b1x1 + b2x2 + ... + bnxn
+
+### Usage example
+
+```python
+from waveml import WaveRegressor
+
+wr = WaveRegressor()
+wr.fit(SX_train, y_train)
+wr.predict(SX_test)
+```
+
+### Sklearn compatebility
+
+```python
+from sklearn.pipeline import Pipeline
+
+pipeline = Pipeline(
+    steps=[
+        ("Stack_L1", wst),
+        ("Final Estimator", WaveRegressor())
+    ]
+)
+
+pipeline.fit(X_train, y_train)
+pipeline.predict(X_test)
+```
 
 ## WaveTransformer
 Performs cross validated linear transformations over stacked predictions
 
+### Usage example
+
+```python
+from waveml import WaveTransformer
+
+wt = WaveTransformer()
+wt.fit(X_train, y_train)
+wt.transform(X_test)
+```
+
+### Sklearn compatebility
+
+```python
+pipeline = Pipeline(
+    steps=[
+        ("Stack_L1", wst),
+        ("LinearTransformations", WaveTransformer()),
+        ("Final Estimator", WaveRegressor())
+    ]
+)
+```
 ## WaveEncoder
 Performs encoding of categorical features in the initial dataset
+
+```python
+from waveml import WaveEncoder
+
+we = WaveEncoder(encodeing_type="label")
+X_train = we.fit_transform(X_train)
+X_test = we.transform(X_test)
+```
