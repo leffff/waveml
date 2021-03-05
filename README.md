@@ -81,10 +81,10 @@ pipeline.predict(X_test)
 ```
 
 ## WaveRegressor
-Performs weighted average over stacked predictions
-Analogue of Linear Regression without intercept
-Linear Regression: y = b0 + b1x1 + b2x2 + ... + bnxn
-Weihghted Average: y = b1x1 + b2x2 + ... + bnxn
+Performs weighted average over stacked predictions</br>
+Analogue of Linear Regression without intercept</br>
+Linear Regression: *y = b0 + b1x1 + b2x2 + ... + bnxn*</br>
+Weihghted Average: *y = b1x1 + b2x2 + ... + bnxn*</br>
 
 ### Usage example
 
