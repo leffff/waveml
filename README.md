@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/waveml.svg?colorB=4cc61e)](https://pypi.org/project/waveml/) 
+[![PyPI license](https://img.shields.io/pypi/l/waveml.svg)](https://github.com/leffff/waveml/blob/main/LICENSE)
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/waveml.svg)](https://pypi.python.org/pypi/waveml/)
+
 # waveml
 Open source machine learning library for performance of a weighted average  and linear transformations over stacked predictions
 
@@ -6,113 +10,139 @@ Open source machine learning library for performance of a weighted average  and 
 pip install waveml
 ```
 
-## Usage Example:
+## Overview
+
+waveml features four models: </br>
+> [WaveStackingTransformer](https://github.com/leffff/waveml#WaveStackingTransformer)</br>
+> [WaveRegressor](https://github.com/leffff/waveml#WaveRegressor)</br>
+> [WaveTransformer](https://github.com/leffff/waveml#WaveTransformer)</br>
+> [WaveEncoder](https://github.com/leffff/waveml#WaveEncoder)</br>
+
+
+## WaveStackingTransformer
+Performs Classical Stacking
+
+Can be used for following objectives:</br>
+> Regression</br>
+> Classification</br>
+> Probability Prediction</br>
+
+### Usage example
+
 ```python
-import numpy as np
-from sklearn.datasets import load_boston
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
-from vecstack import StackingTransformer
-from sklearn.metrics import mean_squared_error
-from waveml import WaveRegressor, WaveTransformer
-from waveml.metrics import SAE
-```
-Loss function
-```python
-def rmse(predictions, targets):
-    return np.sqrt(((predictions - targets) ** 2).mean())    
-```
-Stacking ensemble
-```python
-stack = StackingTransformer(
-    estimators=[
-        ["GBR", GradientBoostingRegressor()],
-        ["RFR", RandomForestRegressor()],
-        ["ETR", ExtraTreesRegressor()]
+from waveml import WaveStackingTransformer
+from catboost import CatBoostRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+
+wst = WaveStackingTransformer(
+    models=[
+      ("CBR", CatBoostRegressor()),
+      ("XGBR", XGBRegressor()),
+      ("LGBMR", LGBMRegressor())
     ],
     n_folds=5,
-    shuffle=True,
+    verbose=True,
+    regression=True,
     random_state=42,
-    metric=rmse,
-    variant="A",
-    verbose=0
+    shuffle=True
 )
-```
-Data
-```python
+
+from sklearn.datasets import load_boston
+form sklearn.model_selection import train_test_split
+
 X, y = load_boston(return_X_y=True)
-from sklearn.model_selection import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, random_state=42)
-```
-Training a stacking ensemble
-```python
-stack.fit(X_train, y_train)
-print("Individual scores:", np.mean(stack.scores_, axis=1))
-```
-Output:
-```
-Individual scores: [3.54600289 3.7031519  3.31942812]
-```
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, shuffle=True)
 
-Stacked predictions
-```python
-SX_train = stack.transform(X_train)
-SX_test = stack.transform(X_test)
-```
+SX_train = wst.fit_transform(X_train, y_train, prettified=True)
+SX_test = wst.transform(X_test, prettified=True)
 
-LinearRegression
-```python
 from sklearn.linear_model import LinearRegression
 lr = LinearRegression()
+
 lr.fit(SX_train, y_train)
-print("LinearRegression:", rmse(y_test, lr.predict(SX_test)))
-```
-Output
-```
-LinearRegression: 3.064970532826568
+lr.predict(SX_test)
 ```
 
-## What is WaveRegressor?
-WaveRegressor is a model that performs a weighted average over stacked predictions
+### Sklearn compatebility
 
 ```python
-wr = WaveRegressor(verbose=0, n_opt_rounds=1000, loss_function=SAE)
+from sklearn.pipeline import Pipeline
+
+pipeline = Pipeline(
+    steps=[
+        ("Stack_L1", wst),
+        ("Final Estimator", lr)
+    ]
+)
+
+pipeline.fit(X_train, y_train)
+pipeline.predict(X_test)
+```
+
+## WaveRegressor
+Performs weighted average over stacked predictions</br>
+Analogue of Linear Regression without intercept</br>
+Linear Regression: *y = b0 + b1x1 + b2x2 + ... + bnxn*</br>
+Weihghted Average: *y = b1x1 + b2x2 + ... + bnxn*</br>
+
+### Usage example
+
+```python
+from waveml import WaveRegressor
+
+wr = WaveRegressor()
 wr.fit(SX_train, y_train)
-print("WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
-```
-Output:
-```
-WaveRegressor: 3.026784272554217
+wr.predict(SX_test)
 ```
 
-## Why is it better than Linear Regression?
-The three main differance between WaveRegressor and linear regression: </br>
->1) WaveRegressor does not fit an intercept. Only coefficients </br>
->2) It can optimize several metrics that are present in ```metrics.py``` </br>
->3) To achieve a higher performce you should experiment with a ```loss_function``` parameter </br>
+### Sklearn compatebility
 
-## What is WaveTransformer?
-WaveTransformer is a model that performs linear transformations on each feature in a way that minimizes an error betbeen a feature and a target value </br>
-WaveTransformer does a cross validation process therefore it does not overfit and can be used to transform training data
-
-## Why to combine the two?
-Combining the two models increases prediction quality
-
-## Combining example
-Tune stacked predictions
 ```python
-wt = WaveTransformer(verbose=0, n_opt_rounds=1000, learning_rate=0.0001, loss_function=SAE)
-wt.fit(SX_train, y_train, n_folds=5)
-TSX_train = wt.transform(SX_train)
-TSX_test = wt.transform(SX_test)
-```
-Perform weighted average over transformed stacked predictions
-```python
-wr.fit(TSX_train, y_train)
-print("WaveTransformer + WaveRegressor:", rmse(y_test, wr.predict(SX_test)))
-```
-Output:
-```
-WaveTransformer + WaveRegressor: 3.0190282172825995
+from sklearn.pipeline import Pipeline
+
+pipeline = Pipeline(
+    steps=[
+        ("Stack_L1", wst),
+        ("Final Estimator", WaveRegressor())
+    ]
+)
+
+pipeline.fit(X_train, y_train)
+pipeline.predict(X_test)
 ```
 
-## TODO: categorical transformer
+## WaveTransformer
+Performs cross validated linear transformations over stacked predictions
+
+### Usage example
+
+```python
+from waveml import WaveTransformer
+
+wt = WaveTransformer()
+wt.fit(X_train, y_train)
+wt.transform(X_test)
+```
+
+### Sklearn compatebility
+
+```python
+pipeline = Pipeline(
+    steps=[
+        ("Stack_L1", wst),
+        ("LinearTransformations", WaveTransformer()),
+        ("Final Estimator", WaveRegressor())
+    ]
+)
+```
+## WaveEncoder
+Performs encoding of categorical features in the initial dataset
+
+```python
+from waveml import WaveEncoder
+
+we = WaveEncoder(encodeing_type="label")
+X_train = we.fit_transform(X_train)
+X_test = we.transform(X_test)
+```
