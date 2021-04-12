@@ -27,6 +27,7 @@ class WaveRegressor(Wave):
     """
     Weighted average regression model
     """
+
     def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
@@ -136,6 +137,7 @@ class WaveClassifier(WaveRegressor):
     """
     Weighted average classification model
     """
+
     def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1,
                  threshold: float = 0.5):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
@@ -162,7 +164,9 @@ class WaveTransformer(Wave):
     """
     Weighted average transformer, which performs a transformation over each feature separately
     """
-    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, regression: bool=True,
+
+    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE,
+                 regression: bool = True,
                  verbose: int = 1, n_folds: int = 4, random_state: int = None, shuffle: bool = False):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
@@ -253,11 +257,17 @@ class WaveTransformer(Wave):
 
         return X_tensor.detach().numpy()
 
+    def fit_transform(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+                      y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        self.fit(X, y)
+        return self.transform(X)
+
 
 class WaveEncoder:
     """
     Categorical feature incoding model
     """
+
     def __init__(self, encodeing_type: str, strategy: str = "mean"):
         self.encoding_types = ["catboost", "label", "target", "count"]
         self.encoding_type = encodeing_type.lower()
@@ -373,6 +383,7 @@ class WaveStackingTransformer:
     """
     Stacking ensembling model
     """
+
     def __init__(self, models, metric, n_folds: int = 4, random_state: int = None, shuffle: bool = False,
                  verbose: bool = True, regression: bool = True, voting: str = "soft"):
 

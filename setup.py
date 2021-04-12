@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="waveml",
-    version="0.2.0",
+    version="0.2.1",
     author="leffff",
     author_email="levnovitskiy@gmail.com",
     description="Open source machine learning library with various models and tools",
