@@ -3,43 +3,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from waveml.metrics import RMSE, MSE, MAE, MAPE, MSLE, MBE, SAE, SSE
+from waveml.utils import to_tensor, to_array
 from sklearn.model_selection import KFold
-
-
-def to_tensor(X) -> torch.tensor:
-    dtype = type(X)
-
-    if dtype == pd.DataFrame:
-        return torch.tensor(X.to_numpy())
-
-    elif dtype == pd.Series:
-        return torch.tensor(X.values)
-
-    elif dtype == np.ndarray:
-        return torch.tensor(X)
-
-    elif dtype == list:
-        return torch.tensor(X)
-
-    return X
-
-
-def to_array(X) -> np.ndarray:
-    dtype = type(X)
-
-    if dtype == pd.DataFrame:
-        return X.to_numpy()
-
-    elif dtype == pd.Series:
-        return X.to_numpy()
-
-    elif dtype == torch.Tensor:
-        return X.detach().numpy()
-
-    elif dtype == list:
-        return np.array(X)
-
-    return X
 
 
 class Wave:
@@ -59,6 +24,9 @@ class Wave:
 
 
 class WaveRegressor(Wave):
+    """
+    Weighted average regression model
+    """
     def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
@@ -80,6 +48,7 @@ class WaveRegressor(Wave):
             y_test_tensor = to_tensor(eval_set[1])
 
         n_features = X_train_tensor.shape[1]
+
         self.weights = to_tensor(weights) if weights != None else torch.tensor(
             [1 / n_features for i in range(n_features)]
         )
@@ -163,18 +132,44 @@ class WaveRegressor(Wave):
         return sum
 
 
+class WaveClassifier(WaveRegressor):
+    """
+    Weighted average classification model
+    """
+    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1,
+                 threshold: float = 0.5):
+        super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
+        self.threshold = threshold
+
+    # Predict on on passed data with current weights
+    def predict_proba(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        if not self.fitted:
+            raise AttributeError("Model has not been fitted yet. Use fit() method first.")
+
+        X = to_tensor(X)
+        proba = (1 / (1 + torch.exp(-torch.sum(X * self.weights, 1)))).detach().numpy().reshape(-1, 1)
+        inverse_proba = -proba + 1
+        return np.hstack([inverse_proba, proba])
+
+    def predict(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        y_pred = self.predict_proba(X)[:, 1]
+        y_pred[y_pred < self.threshold] = 0
+        y_pred[y_pred >= self.threshold] = 1
+        return y_pred
+
+
 class WaveTransformer(Wave):
-    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, verbose: int = 1):
+    """
+    Weighted average transformer, which performs a transformation over each feature separately
+    """
+    def __init__(self, n_opt_rounds: int = 1000, learning_rate: float = 0.01, loss_function=MSE, regression: bool=True,
+                 verbose: int = 1, n_folds: int = 4, random_state: int = None, shuffle: bool = False):
         super().__init__(n_opt_rounds, learning_rate, loss_function, verbose)
 
-    def __opt_func(self, X_segment, y_segment, weights):
-        return self.loss_function(X_segment * weights[0] + weights[1], y_segment)
-
-    def fit(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list], n_folds: int = 4, random_state: int = None,
-            shuffle: bool = False) -> None:
-
-        X_train_tensor, y_train_tensor = to_tensor(X), to_tensor(y)
+        self.regression = regression
+        self.shuffle = shuffle
+        self.n_folds = n_folds
+        self.random_state = random_state
 
         if n_folds < 2:
             raise ValueError(f"n_folds should belong to a [2;inf) interval, passed {self.verbose}")
@@ -182,7 +177,16 @@ class WaveTransformer(Wave):
             raise ValueError(f"random_state should belong to a [0;inf) interval, passed {self.verbose}")
         self.n_folds = n_folds
 
+        self.shuffle = shuffle
         self.random_state = int(random_state) if self.shuffle else None
+
+    def __opt_func(self, X_segment, y_segment, weights):
+        return self.loss_function(X_segment * weights[0] + weights[1], y_segment)
+
+    def fit(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]):
+
+        X_train_tensor, y_train_tensor = to_tensor(X), to_tensor(y)
 
         self.n_features = X_train_tensor.shape[1]
         self.weights = []
@@ -225,7 +229,7 @@ class WaveTransformer(Wave):
             feature_weights = feature_weights.reshape(-1, 2)
             self.weights.append(feature_weights)
         self.fitted = True
-        return
+        return self
 
     def get_weights(self) -> np.ndarray:
         if not self.fitted:
@@ -235,18 +239,25 @@ class WaveTransformer(Wave):
 
     def transform(self, X) -> np.ndarray:
         X_tensor = to_tensor(X)
+
         if not self.fitted:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
         for i in range(self.n_features):
             feature = X_tensor[:, i]
             w = self.weights[i].mean(dim=0)
-            X_tensor[:, i] = feature * w[0] + w[1]
+            if self.regression:
+                X_tensor[:, i] = feature * w[0] + w[1]
+            else:
+                (1 / (1 + torch.exp(-(feature * w[0] + w[1]))))
 
         return X_tensor.detach().numpy()
 
 
-class WaveEncoder():
+class WaveEncoder:
+    """
+    Categorical feature incoding model
+    """
     def __init__(self, encodeing_type: str, strategy: str = "mean"):
         self.encoding_types = ["catboost", "label", "target", "count"]
         self.encoding_type = encodeing_type.lower()
@@ -359,7 +370,10 @@ class WaveEncoder():
 
 
 class WaveStackingTransformer:
-    def __init__(self, models, loss_function, n_folds: int = 4, random_state: int = None, shuffle: bool = False,
+    """
+    Stacking ensembling model
+    """
+    def __init__(self, models, metric, n_folds: int = 4, random_state: int = None, shuffle: bool = False,
                  verbose: bool = True, regression: bool = True, voting: str = "soft"):
 
         self.models = [i[1] for i in models]
@@ -369,7 +383,7 @@ class WaveStackingTransformer:
         self.model_scores_dict = {}
 
         self.n_folds = n_folds
-        self.loss_function = loss_function
+        self.metric = metric
         self.random_state = random_state
         self.shuffle = shuffle
         self.verbose = verbose
@@ -389,7 +403,7 @@ class WaveStackingTransformer:
 
     def fit(self,
             X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
-            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> None:
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]):
 
         self.model_dict = {}
         self.model_scores_dict = {}
@@ -417,9 +431,9 @@ class WaveStackingTransformer:
                 sub_models.append(sub_model)
 
                 if self.regression or self.hard_voting:
-                    sub_score = self.loss_function(sub_model.predict(X_test), y_test)
+                    sub_score = self.metric(sub_model.predict(X_test), y_test)
                 else:
-                    sub_score = self.loss_function(sub_model.predict_proba(X_test), y_test)
+                    sub_score = self.metric(sub_model.predict_proba(X_test), y_test)
 
                 sub_scores.append(sub_score)
 
@@ -432,6 +446,7 @@ class WaveStackingTransformer:
             self.model_scores_dict[self.names[i]] = sub_scores
 
         self.fitted = True
+        return self
 
     def transform(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
                   prettified: bool = False) -> [np.ndarray, pd.DataFrame]:
@@ -509,7 +524,7 @@ class WaveStackingTransformer:
                     sub_transformations[test_index] = sub_model.predict_proba(X_test)[:, 1].reshape(-1, 1)
 
                 sub_models.append(sub_model)
-                sub_score = self.loss_function(sub_model.predict(X_test), y_test)
+                sub_score = self.metric(sub_model.predict(X_test), y_test)
                 sub_scores.append(sub_score)
 
                 if self.verbose:
@@ -543,3 +558,137 @@ class WaveStackingTransformer:
             raise AttributeError("Model has not been fitted yet. Use fit() method first.")
 
         return self.model_dict.values()
+
+
+class WaveCompensator:
+    def __init__(self, strong_model, weak_model, n_folds: int = 4, random_state: int = None,
+                 shuffle: bool = False, n_opt_rounds: int = 1000, learning_rate: float = 0.01,
+                 regression: bool = True, loss_function=MSE, verbose: bool = True):
+
+        self.strong_model, self.weak_model = strong_model, weak_model
+        self.strong_models, self.weak_models = [], []
+        self.n_folds = n_folds
+        self.random_state = random_state
+        self.shuffle = shuffle
+        self.n_opt_rounds = n_opt_rounds
+        self.learning_rate = learning_rate
+        self.loss_function = loss_function
+        self.regression = regression
+        self.verbose = verbose
+
+        self.train_losses = []
+
+        self.fitted = False
+
+    def fit(self,
+            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> None:
+
+        self.strong_models, self.weak_models = [], []
+        self.X, self.y = to_array(X), to_array(y)
+
+        kf = KFold(n_splits=self.n_folds, random_state=self.random_state, shuffle=self.shuffle)
+
+        strong_train = np.zeros([len(X), 1])
+        weak_train = np.zeros([len(X), 1])
+
+        for train_index, test_index in kf.split(X):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+
+            self.strong_model.fit(X_train, y_train)
+            self.weak_model.fit(X_train, y_train)
+
+            self.strong_models.append(self.strong_model)
+            self.weak_models.append(self.weak_model)
+
+            strong_train[test_index] = self.strong_model.predict(X_test).reshape(-1, 1)
+            weak_train[test_index] = self.weak_model.predict(X_test).reshape(-1, 1)
+
+        self.weight = torch.tensor([0.0])
+        self.weight.requires_grad_()
+        self.optimizer = torch.optim.SGD([self.weight], self.learning_rate)
+
+        for i in range(self.n_opt_rounds):
+            # clear gradient
+            self.optimizer.zero_grad()
+            # get train set error
+            train_loss = self.__opt_func(X_strong=to_tensor(strong_train), X_weak=to_tensor(weak_train), y=to_tensor(y))
+            # append train loss to train loss history
+            self.train_losses.append(train_loss.item())
+            # create a train part of fit information
+            print(f"train: {train_loss.item()}")
+            # optimization of weights according to the function
+            train_loss.backward()
+            self.optimizer.step()
+
+        self.fitted = True
+
+    def predict(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        X = to_array(X)
+        strong_preds = np.zeros(len(X))
+        weak_preds = np.zeros(len(X))
+
+        for i in range(self.n_folds):
+            strong_preds += (self.strong_models[i].predict(X)) / self.n_folds
+            weak_preds += (self.weak_models[i].predict(X)) / self.n_folds
+
+        return strong_preds - self.weight.item() * weak_preds
+
+    def predict_proba(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        X = to_array(X)
+        strong_preds = np.zeros((len(X), 1))
+        weak_preds = np.zeros((len(X), 1))
+
+        for i in range(self.n_folds):
+            if self.regression:
+                strong_preds += self.strong_models[i].predict_proba(X)[:, 1].reshape(-1, 1) / self.n_folds
+                weak_preds += self.weak_models[i].predict_proba(X)[:, 1].reshape(-1, 1) / self.n_folds
+
+        proba = strong_preds - self.weight.item() * weak_preds
+        inverse_proba = -proba + 1
+        return np.hstack([inverse_proba, proba])
+
+    def __opt_func(self, X_strong, X_weak, y) -> torch.Tensor:
+        return self.loss_function(X_strong - self.weight * X_weak, y)
+
+
+class WaveBagging:
+    def __init__(self, model, n_estimators: int = 10, bagging_percentage: float = 0.7, regression: bool = True,
+                 verbose: int = 1):
+        self.model = model
+        self.n_estimators = n_estimators
+        self.bagging_percentage = bagging_percentage
+        self.regression = regression
+        self.verbose = verbose
+        self.trained_models = []
+
+    def fit(self,
+            X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list],
+            y: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> None:
+
+        X, y = to_array(X), to_array(y)
+        self.trained_models = []
+        len_rows = X.shape[0]
+        n_bag_items = round(len_rows * self.bagging_percentage)
+
+        for i in range(self.n_estimators):
+            random_indices = np.random.choice(len_rows, size=n_bag_items, replace=False)
+            X_bag, y_bag = X[random_indices], y[random_indices]
+            self.model.fit(X_bag, y_bag)
+            self.trained_models.append(self.model)
+            print(f"Model {i} is fitted")
+
+    def predict(self, X: [pd.DataFrame, pd.Series, np.array, torch.Tensor, list]) -> np.ndarray:
+        X = to_array(X)
+        preds = []
+        for model in self.trained_models:
+            if self.regression:
+                pred = model.predict(X).reshape(-1, 1)
+                preds.append(pred)
+            else:
+                pred = model.predict_proba(X)[:, 1].reshape(-1, 1)
+                preds.append(pred)
+
+        y_pred = np.hstack(preds).mean(axis=1)
+        return y_pred
